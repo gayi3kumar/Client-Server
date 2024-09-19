@@ -1,0 +1,168 @@
+import java.io.*;
+import java.net.*;
+
+
+public class server{
+  
+  public final static int SERVICE_PORT=50001;
+ 
+  public static void main(String[] args) throws Exception{
+    while(true){
+
+      
+      DatagramSocket serverSocket = new DatagramSocket(SERVICE_PORT);
+      int packetCount = 0;
+      int endFile = 0;
+      
+      
+      byte[] sendingNullPacket = new byte[1];   
+      byte[] receivingDataBuffer = new byte[512];   
+
+      
+      DatagramPacket inputPacket = new DatagramPacket(receivingDataBuffer, receivingDataBuffer.length);
+      System.out.println("Waiting for a client to connect...");
+      
+      
+      serverSocket.receive(inputPacket);
+      System.out.println("\nClient message received. Processing request...\n");
+      
+      
+      String receivedData = new String(inputPacket.getData());
+      byte[] receivedFile = new byte[107374];
+      int wasRead;
+      String[] splitReq = receivedData.split(" ");
+      String fileName = splitReq[1];
+      RandomAccessFile dataFile = new RandomAccessFile(fileName, "r");
+      long fileSize = dataFile.length();
+      wasRead = dataFile.read(receivedFile, 0, receivedFile.length);
+      String recFile = new String(receivedFile);
+      System.out.println("Requested file's contents: \n" + recFile);
+      dataFile.seek(0); //set pointer to beginning of file
+
+
+      
+      InetAddress senderAddress = inputPacket.getAddress();
+      int senderPort = inputPacket.getPort();
+
+      
+      while (endFile != -1){
+
+          String tempHeader = "";
+          String sendData = "";
+          byte[] header;
+          byte[] sendPacket;
+          byte[] sendingDataBuffer = new byte[512];
+
+          tempHeader = buildFileHeader(packetCount, fileSize); //create header
+          header = tempHeader.getBytes(); 
+          sendPacket = makeRoom(header);
+
+          
+          endFile = dataFile.read(sendPacket, header.length, (sendPacket.length - header.length)); 
+
+          
+          if(endFile == -1){
+            break;
+          }
+          System.out.println("Processing packet " + (packetCount) + "...\n");
+          sendData = getSum(sendPacket);
+          System.out.println("Packet " + (packetCount) + "'s contents: " 
+            + sendData + "\n");
+          sendingDataBuffer = sendData.getBytes();
+          System.out.println("Sending packet " + (packetCount) + "...\n");
+          DatagramPacket outputPacket = new DatagramPacket(sendingDataBuffer, 
+            sendingDataBuffer.length,senderAddress,senderPort);
+          
+          serverSocket.send(outputPacket);
+          
+          packetCount++;
+        }
+      String n = "\0"; //null character
+      sendingNullPacket = n.getBytes(); //put packet data (in bytes) into packet buffer
+      System.out.println("Reached the end of the file. Sending null packet...\n");
+      DatagramPacket outputPacketNull = new DatagramPacket(sendingNullPacket, 
+        sendingNullPacket.length, senderAddress, senderPort);
+      serverSocket.send(outputPacketNull);
+      
+      serverSocket.close();
+      dataFile.close();
+    }
+  }
+
+  
+  public static String buildFileHeader(int packetNum, long fileSize){
+      String fHeader = "Packet " + (packetNum) + "\n" + "Checksum: " + "00000\r\n"  + "HTTP/1.0 200 Document Follows\r\n"
+        + "Content-Type: text/plain\r\n" + "Content-Length: " + fileSize + "\r\n\r\n";
+      return fHeader;
+  }
+
+  
+  public static byte[] makeRoom(byte[] header){
+      byte[] header2 = new byte[1024];
+      for(int offset = 0; offset < header2.length; offset++){
+          if(offset < header.length){
+              header2[offset] = header[offset];
+          }
+          else{
+              header2[offset] = 32;
+          }
+      }
+      return header2;
+  }
+
+ 
+  public static int checkSum(byte[] data){
+
+      int sum = 0;
+      for(int i = 0; i < data.length; i++){
+          sum += (int) data[i];
+      }
+      return sum;
+  }
+
+   
+  public static String getSum(byte[] data){
+      
+      String info = new String(data);
+      info = info.substring(info.indexOf("h:") + 13); 
+      byte[] checkData = info.getBytes();
+      int checkSum = checkSum(checkData); 
+      info = Integer.toString(checkSum); 
+
+      String packetData = new String(data);
+      int index = packetData.indexOf(":") + 2; 
+      byte[] sum = info.getBytes();
+      int length = info.length();
+
+      
+      switch(length){
+          case 2:
+            data[index + 3] = sum[0];
+            data[index + 4] = sum[1];
+            break;
+          case 3:
+            data[index + 2] = sum[0];
+            data[index + 3] = sum[1];
+            data[index + 4] = sum[2];
+            break;
+          case 4:
+            data[index + 1] = sum[0];
+            data[index + 2] = sum[1];
+            data[index + 3] = sum[2];
+            data[index + 4] = sum[3];
+            break;
+          case 5:
+            data[index] = sum[0];
+            data[index + 1] = sum[1];
+            data[index + 2] = sum[2];
+            data[index + 3] = sum[3];
+            data[index + 4] = sum[4];
+            break;
+          default:
+            break;
+
+      }
+      String result = new String(data);
+      return result;
+  }
+}
