@@ -1,0 +1,200 @@
+import java.io.*;
+import java.net.*;
+import java.util.*;
+
+
+
+public class client{
+  
+  public final static int SERVICE_PORT = 50001;
+  
+  public static void main(String[] args) throws Exception{
+
+      String message = "";  
+      int lastMessage = 0;
+      boolean endFile = false;
+      int packetCount = 0;
+      int gremlinProb;
+      ArrayList<String> fullDataList = new ArrayList<String>();
+
+      
+      DatagramSocket clientSocket = new DatagramSocket();
+      
+      
+      InetAddress IPAddress = InetAddress.getLocalHost();
+      
+      
+      byte[] sendingDataBuffer = new byte[512];
+
+      
+      String http = "Get TestFile.html HTTP/1.0";
+      sendingDataBuffer = http.getBytes();
+      
+      
+      DatagramPacket sendingPacket = new DatagramPacket(sendingDataBuffer,
+        sendingDataBuffer.length,IPAddress, SERVICE_PORT);
+      System.out.println("Sending message to server...");
+      System.out.println("\nMessage contents: \n" + http);
+      
+      
+      Scanner in = new Scanner(System.in);
+      System.out.print("\nPlease enter a probability for error between 1 and 100: ");
+      gremlinProb = in.nextInt();
+      in.close();
+
+      
+      clientSocket.send(sendingPacket);
+    
+      
+      while(!endFile){ 
+
+        
+        byte[] receivingDataBuffer = new byte[512];
+
+         
+        DatagramPacket receivingPacket = new DatagramPacket(receivingDataBuffer,
+          receivingDataBuffer.length);
+        clientSocket.receive(receivingPacket);
+        System.out.println("\nServer reply received.");
+
+        
+        byte[] content = new byte[1024]; 
+        content = receivingPacket.getData();
+
+        
+        message = new String(content);
+        lastMessage = message.indexOf('\0');
+        if(lastMessage != -1){
+          endFile = true;
+          break;
+        }
+        System.out.println("Packet " + packetCount + "'s contents: \n" + message);
+        String modMessage = removeHeader(message);
+        fullDataList.add(modMessage);
+
+        
+        Random r = new Random();
+        int flip = r.nextInt(99) + 1;
+        if(flip <= gremlinProb){
+          gremlin(content);
+        }
+
+        
+        detectError(content, packetCount);
+
+        packetCount++;
+    }
+      
+      clientSocket.close();
+
+      
+      System.out.println("Reached end of packets.\n");
+      System.out.println("\nSaving content to file...");
+      String x = new String();
+      for(int j = 0; j < fullDataList.size(); j++){
+        x += fullDataList.get(j);
+      }
+      writeFile(x);
+      System.out.println("Output file contents: \n" + x);
+  }
+
+ 
+  public static byte[] gremlin(byte[] dataIn) throws IOException {
+			
+		Random r = new Random();
+		
+		int x = 0;
+		int percent = r.nextInt(100 - 1 + 1) + 1;
+		if (percent < 50){
+		    x = 1; 
+		}
+		else if (percent < 80) {
+		    x = 2;
+		}
+		else if (percent <= 100){
+		    x = 3;
+		} 
+		for(int i = 0; i < x; i++) {
+			//selects the array to change
+			int num = r.nextInt(dataIn.length);
+			//selects the change value
+			int num2 = r.nextInt(128);
+			dataIn[num] = (byte) ~dataIn[num2];
+		}
+		 return dataIn;
+	 }	
+	
+
+ 
+  public static String removeHeader(String data){
+
+      String modified = data.substring(data.indexOf("h:") + 13);
+      return modified;
+  }
+
+  
+  public static int checkSum(byte[] data){
+
+    int sum = 0;
+    for(int i = 0; i < data.length; i++){
+        sum += (int) data[i];
+    }
+    return sum;
+  }
+
+  
+  public static String grabSum(byte[] data){
+
+      String checkSum = ""; //string to store checksum
+      boolean zeroes = true; //boolean for whether there are leading zeroes
+
+      byte[] dataCheckSum = new byte[5]; 
+      String packetData = new String(data); 
+      int index = packetData.indexOf(":") + 1;
+      int j = 0;
+      for(int i = index + 1; i < index + 6; i++){
+          dataCheckSum[j] = data[i]; 
+          j++;
+      }
+      checkSum = new String(dataCheckSum); 
+      
+      while(zeroes){
+          zeroes = checkSum.startsWith("0");
+          if(zeroes){
+              checkSum = checkSum.substring(1);
+          }
+      }
+      return checkSum;
+  }
+  
+  public static void writeFile(String data){
+
+      try{
+          PrintWriter writer = new PrintWriter("Output.txt", "UTF-8");
+          writer.println(data);
+          writer.close();
+      }
+      catch(IOException e){
+          System.out.println("Failed to write file with error: " + e);
+      }
+      System.out.println("Successfully saved file 'Output.txt'.\n");
+  }
+
+  
+  public static void detectError(byte[] data, int packetNumber){
+
+      int result = 0;
+      String myCheckSum = grabSum(data); 
+      byte[] modHeader = data; 
+      String checkSum = new String(modHeader); 
+      checkSum = removeHeader(checkSum); 
+      result = checkSum(checkSum.getBytes()); 
+      
+      if(myCheckSum.equals(Integer.toString(result)) || data[0] == 0){
+          System.out.println("\nNo error found in packet #" + packetNumber);
+      }
+      else{
+          System.out.println("\nERROR DETECTED IN PACKET # " + packetNumber);
+      }
+  }
+}
